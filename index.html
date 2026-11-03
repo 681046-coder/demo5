@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>คลังสินค้าไอที</title>
+<style>
+:root{--bg:#eef1f4;--panel:#fff;--ink:#1c2430;--mut:#667085;--line:#d5dbe3;--ok:#1f7a4d;--warn:#b86e00;--bad:#c62828;--acc:#27408b}
+@media (prefers-color-scheme:dark){:root{--bg:#12161c;--panel:#1b212a;--ink:#e6eaf0;--mut:#98a2b3;--line:#2c3541;--ok:#4cc38a;--warn:#f0a63a;--bad:#ff6b6b;--acc:#8fa8ff}}
+*{box-sizing:border-box}
+body{margin:0;font:15px/1.5 "Noto Sans Thai","Sarabun",system-ui,sans-serif;background:var(--bg);color:var(--ink);padding:16px;max-width:1000px;margin-inline:auto}
+h1{font-size:1.4rem;margin:.2em 0 .8em}
+h2{font-size:1.05rem;margin:0 0 .5em}
+.alerts{display:grid;gap:8px;margin-bottom:16px}
+.alert{padding:10px 14px;border-left:5px solid;background:var(--panel);border-radius:4px}
+.alert.out{border-color:var(--bad)}.alert.low{border-color:var(--warn)}
+.alert.out b{color:var(--bad)}.alert.low b{color:var(--warn)}
+form.add{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;background:var(--panel);padding:12px;border-radius:6px;margin-bottom:16px;border:1px solid var(--line)}
+input,select,button{font:inherit;padding:7px 9px;border:1px solid var(--line);border-radius:4px;background:var(--panel);color:var(--ink)}
+button{cursor:pointer;background:var(--acc);color:#fff;border-color:var(--acc)}
+button.sm{padding:3px 9px;background:transparent;color:var(--acc)}
+button.del{color:var(--bad);border-color:var(--bad)}
+:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+.tabs{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
+.tabs button{background:var(--panel);color:var(--ink)}
+.tabs button.on{background:var(--acc);color:#fff}
+.cat{background:var(--panel);border:1px solid var(--line);border-radius:6px;margin-bottom:14px;overflow-x:auto}
+.cat h2{padding:10px 14px;margin:0;border-bottom:1px solid var(--line)}
+table{width:100%;border-collapse:collapse;min-width:560px}
+th,td{padding:8px 14px;text-align:left;border-bottom:1px solid var(--line)}
+th{color:var(--mut);font-weight:500}
+td.n{text-align:right;font-variant-numeric:tabular-nums}
+.tag{padding:2px 8px;border-radius:10px;font-size:.85rem;border:1px solid}
+.tag.ok{color:var(--ok)}.tag.low{color:var(--warn)}.tag.out{color:var(--bad)}
+.empty{padding:24px;text-align:center;color:var(--mut)}
+</style>
+</head>
+<body>
+<h1>คลังสินค้าคอมพิวเตอร์</h1>
+<div class="alerts" id="alerts" role="status" aria-live="polite"></div>
+
+<form class="add" id="f">
+  <input name="cat" list="cats" placeholder="หมวด เช่น CPU" required>
+  <datalist id="cats"></datalist>
+  <input name="name" placeholder="ชื่อสินค้า" required style="grid-column:span 2">
+  <input name="qty" type="number" min="0" placeholder="จำนวน" required>
+  <input name="min" type="number" min="0" placeholder="แจ้งเตือนเมื่อเหลือ ≤" required>
+  <button>เพิ่มสินค้า</button>
+</form>
+
+<div class="tabs" id="tabs"></div>
+<div id="list"></div>
+
+<script>
+let items=[], filter="ทั้งหมด";
+const $=s=>document.querySelector(s);
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const status=i=>i.qty===0?"out":i.qty<=i.min?"low":"ok";
+const label={ok:"ปกติ",low:"ใกล้หมด",out:"หมด"};
+
+async function api(path,data){
+  const opt=data?{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:new URLSearchParams(data)}:{};
+  items=await (await fetch(path,opt)).json(); render();
+}
+
+function render(){
+  const cats=[...new Set(items.map(i=>i.cat))].sort();
+  if(filter!=="ทั้งหมด"&&!cats.includes(filter))filter="ทั้งหมด";
+  $("#cats").innerHTML=cats.map(c=>`<option value="${esc(c)}">`).join("");
+  $("#tabs").innerHTML=["ทั้งหมด",...cats].map(c=>`<button class="${c===filter?"on":""}" data-c="${esc(c)}">${esc(c)}</button>`).join("");
+
+  const out=items.filter(i=>status(i)==="out"), low=items.filter(i=>status(i)==="low");
+  $("#alerts").innerHTML=
+    out.map(i=>`<div class="alert out"><b>สินค้าหมด:</b> ${esc(i.name)} (${esc(i.cat)})</div>`).join("")+
+    low.map(i=>`<div class="alert low"><b>ใกล้หมด:</b> ${esc(i.name)} (${esc(i.cat)}) เหลือ ${i.qty} ชิ้น</div>`).join("");
+
+  const shown=cats.filter(c=>filter==="ทั้งหมด"||c===filter);
+  $("#list").innerHTML=shown.length?shown.map(c=>`
+    <section class="cat"><h2>${esc(c)}</h2><table>
+      <tr><th>สินค้า</th><th class="n">คงเหลือ</th><th class="n">จุดแจ้งเตือน</th><th>สถานะ</th><th>ปรับสต็อก</th></tr>
+      ${items.filter(i=>i.cat===c).map(i=>{const s=status(i);return `<tr>
+        <td>${esc(i.name)}</td><td class="n">${i.qty}</td><td class="n">${i.min}</td>
+        <td><span class="tag ${s}">${label[s]}</span></td>
+        <td><button class="sm" data-a="${i.id}" data-d="-1" aria-label="จ่ายออก 1">−1</button>
+            <button class="sm" data-a="${i.id}" data-d="1" aria-label="รับเข้า 1">+1</button>
+            <button class="sm" data-a="${i.id}" data-d="10">+10</button>
+            <button class="sm del" data-x="${i.id}">ลบ</button></td></tr>`}).join("")}
+    </table></section>`).join(""):`<div class="empty">ยังไม่มีสินค้า เพิ่มรายการแรกด้านบน</div>`;
+}
+
+document.addEventListener("click",e=>{
+  const t=e.target;
+  if(t.dataset.c)filter=t.dataset.c,render();
+  if(t.dataset.a)api("/api/adjust",{id:t.dataset.a,delta:t.dataset.d});
+  if(t.dataset.x&&confirm("ลบสินค้านี้?"))api("/api/delete",{id:t.dataset.x});
+});
+$("#f").addEventListener("submit",e=>{
+  e.preventDefault();
+  api("/api/items",Object.fromEntries(new FormData(e.target)));
+  e.target.reset();
+});
+api("/api/items");
+setInterval(()=>api("/api/items"),15000);
+</script>
+</body>
+</html>
